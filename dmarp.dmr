@@ -1,5 +1,10 @@
 # DMOD Resource File for dmarp
 # This file specifies where resources should be installed
+#
+# dmarp lives nested under dmnet/lib/dmarp rather than being its own
+# top-level repo, so ${repo_dir}/${build_dir} below (which always resolve
+# to the dmnet repo/build root, not this subdirectory) are prefixed with
+# lib/dmarp - same convention lib/dmip/dmip.dmr uses for its own nesting.
 
 # === Core Module ===
 # Main module file - always installed
@@ -26,7 +31,8 @@ readme=./README.md => ${destination}/${module}/README.md [origin=${repo_dir}/REA
 inc=./include => ${destination}/${module}/include [origin=${repo_dir}/include] [origin=${build_dir}/${module}_defs.h]
 
 # === License ===
-# License file
+# License file - shared at the dmnet repo root (see lib/dmip/dmip.dmr
+# for the same "nested module shares the parent repo's LICENSE" convention)
 license=./LICENSE => ${destination}/${module}/LICENSE [origin=${repo_dir}/LICENSE]
 
 # Adding itself

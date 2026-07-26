@@ -4,6 +4,7 @@ Welcome to the dmarp module documentation.
 
 ## Contents
 
+- **[dmarp.md](dmarp.md)** - Overview and architecture
 - **[api-reference.md](api-reference.md)** - Complete API documentation
 
 ## Quick Reference
@@ -15,6 +16,6 @@ Welcome to the dmarp module documentation.
 View documentation using `dmf-man`:
 
 ```bash
-dmf-man dmarp          # Main documentation
-dmf-man dmarp api      # API reference
+dmf-man dmarp                # Main documentation
+dmf-man dmarp api-reference   # API reference
 ```

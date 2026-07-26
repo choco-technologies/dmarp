@@ -64,16 +64,26 @@ dmod_add_library(${DMOD_MODULE_NAME} ${DMOD_MODULE_VERSION}
     src/dmarp.c
 )
 
-target_include_directories(${DMOD_MODULE_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
 target_include_directories(${DMOD_MODULE_NAME}_if INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# To depend on another module's headers, use:
-#   dmod_link_modules(${DMOD_MODULE_NAME}
-#       other_module@1.0
-#   )
+# dmnetif: dmarp sends/receives raw ARP frames through dmnetif_send()/
+#          _receive() on a specific interface, and reads that interface's
+#          own MAC/IP address to build a request - see src/dmarp.c.
+#          dmip depends on dmarp in turn (to resolve a destination MAC
+#          before sending), not the other way around. A separately
+#          published module, fetched via dmod_link_modules().
+# dmroute: dmroute_addr_t, the address type dmarp resolves - also a
+#          separately published module.
+# dmlist:  backs the ARP cache
+# dmosi:   mutex guarding the cache, plus dmosi_get_tick_count()/
+#          _thread_sleep() for dmarp_resolve()'s reply poll loop
+dmod_link_modules(${DMOD_MODULE_NAME}
+    dmnetif
+    dmroute
+    dmlist
+    dmosi
+)
+
 add_subdirectory(tests)
