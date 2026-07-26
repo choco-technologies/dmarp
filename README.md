@@ -109,25 +109,22 @@ against `"/dev/null"` - real enough for the underlying file open to succeed
 without needing an actual driver behind it (same pattern
 [dmnetif](https://github.com/choco-technologies/dmnetif)'s own tests use).
 
-After building (see above), run the resulting binary directly from the
-build directory:
-
-```bash
-./tests/test_dmarp
-```
-
-It discovers and runs every `DMOD_TEST_STEP()` automatically and exits
-with a code equal to the number of failed steps (`0` means everything
-passed). Alternatively, it can be run through the real dmod loader, the
-way CI does it - `dmf-get install` first resolves `test_dmarp`'s own
-dependency closure (`dmnetif`, `dmroute`, ...) into `DMOD_DMF_DIR` so the
-loader can find every module `test_dmarp.dmf` needs at load time:
+Despite being built as a native ELF binary, `test_dmarp` is a DMOD module
+like any other and must be run through `dmod_loader`, not invoked directly
+(`./tests/test_dmarp` segfaults - it expects the loader's runtime around
+it, not a bare `main()`). `dmf-get install` first resolves `test_dmarp`'s
+own dependency closure (`dmnetif`, `dmroute`, ...) into `DMOD_DMF_DIR` so
+the loader can find every module `test_dmarp.dmf` needs at load time -
+exactly what CI does:
 
 ```bash
 export DMOD_DMF_DIR=$(pwd)/build/dmf
 dmf-get install -d ${DMOD_DMF_DIR}/test_dmarp-local.dmd -y
 dmod_loader build/dmf/test_dmarp.dmf
 ```
+
+It discovers and runs every `DMOD_TEST_STEP()` automatically and prints a
+`Results: X/Y passed` summary.
 
 `tests/dmarp_test.c` covers:
 
