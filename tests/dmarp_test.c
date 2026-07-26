@@ -27,7 +27,7 @@
 #include <errno.h>
 
 #define TEST_DEVICE_PATH_0 "/dev/null"
-#define TEST_DEVICE_PATH_1 "/tmp/test1"
+#define TEST_DEVICE_PATH_1 "/dev/null"
 
 static dmnetif_iface_t g_iface0 = NULL;
 static dmnetif_iface_t g_iface1 = NULL;
@@ -100,9 +100,6 @@ static void build_arp_frame(uint8_t* frame, uint16_t opcode, const dmnetif_mac_a
 
 void dmod_test_setup(void)
 {
-    void* fp = Dmod_FileOpen(TEST_DEVICE_PATH_1, "rw");
-    Dmod_FileWrite("test", 1, sizeof("test"), fp);
-    Dmod_FileClose(fp);
     g_iface0 = dmnetif_register("test0", TEST_DEVICE_PATH_0);
     g_iface1 = dmnetif_register("test1", TEST_DEVICE_PATH_1);
 }
