@@ -117,6 +117,26 @@ static bool ipv4_bytes_equal(const uint8_t* a, const uint8_t* b)
 }
 
 /**
+ * @brief Whether `ip` is an IPv4 broadcast address on `iface` - the limited
+ *        broadcast 255.255.255.255 (RFC 919 §7, always broadcast regardless
+ *        of interface config) or `iface`'s own currently configured subnet
+ *        broadcast address - neither is a real host, so nobody will ever
+ *        answer ARP for it.
+ */
+static bool is_broadcast_target(dmnetif_iface_t iface, const dmroute_addr_t* ip)
+{
+    static const uint8_t limited_broadcast[DMROUTE_IPV4_ADDR_LEN] = { 255, 255, 255, 255 };
+    if (ipv4_bytes_equal(ip->addr.v4, limited_broadcast))
+        return true;
+
+    dmroute_addr_t bcast = { 0 };
+    if (dmnetif_get_broadcast(iface, &bcast) == 0 && bcast.family == dmroute_family_v4)
+        return ipv4_bytes_equal(ip->addr.v4, bcast.addr.v4);
+
+    return false;
+}
+
+/**
  * @brief dmlist_compare_func_t matching a struct dmarp_entry against a
  *        cache_key_t needle (interface name + IP address, ignoring freshness)
  */
@@ -382,6 +402,15 @@ dmod_dmarp_api_declaration(1.0, int, _resolve, ( dmnetif_iface_t iface, const dm
 
     if (ip->family != dmroute_family_v4)
         return -EINVAL;
+
+    if (is_broadcast_target(iface, ip))
+    {
+        if (dmnetif_get_name(iface) == NULL)
+            return -ENODEV;
+
+        memset(mac->addr, 0xFF, DMNETIF_MAC_ADDR_LEN);
+        return 0;
+    }
 
     if (cache_lookup(iface, ip, mac))
         return 0;

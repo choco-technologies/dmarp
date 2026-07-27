@@ -277,6 +277,38 @@ DMOD_TEST_STEP(resolve_non_v4_family_returns_einval)
     DMOD_TEST_EXPECT_EQ(dmarp_resolve(g_iface0, &ip, &mac, DMARP_DEFAULT_TIMEOUT_MS), -EINVAL);
 }
 
+/* ---- resolve: broadcast short-circuit ----
+ *
+ * g_iface0 has no real driver behind it (see the file-level doc comment),
+ * so dmnetif_get_mac_address() always fails and any resolve() that
+ * actually reached the send/wait path would come back -ENODEV, never 0
+ * (see resolve_cache_miss_without_real_driver_returns_enodev above). Both
+ * of these getting back 0 with the all-ones MAC is therefore proof the
+ * broadcast check short-circuited before ever trying to send a request or
+ * wait for a reply. */
+
+DMOD_TEST_STEP(resolve_limited_broadcast_returns_immediately)
+{
+    dmroute_addr_t ip = make_v4(255, 255, 255, 255);
+    dmnetif_mac_addr_t resolved = { 0 };
+    dmnetif_mac_addr_t all_ones = { { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF } };
+
+    DMOD_TEST_EXPECT_EQ(dmarp_resolve(g_iface0, &ip, &resolved, DMARP_DEFAULT_TIMEOUT_MS), 0);
+    DMOD_TEST_EXPECT_TRUE(mac_equal(&resolved, &all_ones));
+}
+
+DMOD_TEST_STEP(resolve_configured_subnet_broadcast_returns_immediately)
+{
+    dmroute_addr_t bcast = make_v4(10, 0, 0, 255);
+    DMOD_TEST_EXPECT_EQ(dmnetif_set_broadcast(g_iface0, &bcast), 0);
+
+    dmnetif_mac_addr_t resolved = { 0 };
+    dmnetif_mac_addr_t all_ones = { { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF } };
+
+    DMOD_TEST_EXPECT_EQ(dmarp_resolve(g_iface0, &bcast, &resolved, DMARP_DEFAULT_TIMEOUT_MS), 0);
+    DMOD_TEST_EXPECT_TRUE(mac_equal(&resolved, &all_ones));
+}
+
 /* ---- note_frame: opportunistic learning ----
  *
  * dmarp_resolve() itself no longer reads frames off the wire (see dmarp.h's

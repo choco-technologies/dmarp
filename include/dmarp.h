@@ -71,7 +71,12 @@ extern "C" {
 /**
  * @brief Resolve an IPv4 address to a MAC address on iface
  *
- * Checks the cache first; on a hit, `mac` is filled in immediately and no
+ * If `ip` is an IPv4 broadcast address - either the limited broadcast
+ * 255.255.255.255 or `iface`'s own configured subnet broadcast address -
+ * `mac` is filled in immediately with FF:FF:FF:FF:FF:FF and no frame is
+ * sent (`timeout_ms` is ignored), since no host ever answers ARP for a
+ * broadcast address and a real request would just time out. Otherwise,
+ * checks the cache first; on a hit, `mac` is filled in immediately and no
  * frame is sent (`timeout_ms` is ignored). On a miss, sends one ARP
  * request out `iface` and waits for dmarp_note_frame() to observe a
  * matching reply and cache it (see that function - it's fed every

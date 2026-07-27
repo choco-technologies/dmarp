@@ -35,7 +35,15 @@ deals with `dmroute_family_v4` addresses.
 
 ## Resolution
 
-`dmarp_resolve()` checks the cache first (see below); on a miss, it:
+`dmarp_resolve()` first checks whether `ip` is an IPv4 broadcast address on
+`iface` - the limited broadcast 255.255.255.255 (RFC 919 §7) or `iface`'s
+own configured subnet broadcast address (`dmnetif_get_broadcast()`). If so,
+it returns `FF:FF:FF:FF:FF:FF` immediately with no frame sent and
+`timeout_ms` ignored: no host ever answers ARP for a broadcast address, so
+sending a real request would only run out the clock on a guaranteed
+timeout.
+
+Otherwise it checks the cache (see below); on a miss, it:
 
 1. Reads the interface's own MAC address (`dmnetif_get_mac_address()`) and
    IP address (`dmnetif_get_ip_address()` - a missing address is fine,
