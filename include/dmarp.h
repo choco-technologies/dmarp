@@ -23,6 +23,13 @@ extern "C" {
  * repeated lookups of the same destination don't send a fresh request
  * every time - see dmarp_resolve() and the cache functions below.
  *
+ * dmarp also answers ARP requests other hosts send *for* one of our own
+ * addresses: dmarp_note_frame() (see its own doc comment) replies on the
+ * spot, from the same call, whenever an incoming request's target address
+ * matches the receiving interface's currently configured IP - there is no
+ * separate "responder" thread or API, this piggybacks on the same frame
+ * feed dmnetbridge's RX pump already provides for cache learning.
+ *
  * IPv6 is out of scope: IPv6 neighbor discovery uses NDP (over ICMPv6),
  * not ARP, so every function here only ever deals with
  * dmroute_family_v4 addresses.
@@ -124,6 +131,14 @@ dmod_dmarp_api(1.0, int, _resolve, ( dmnetif_iface_t iface, const dmroute_addr_t
  * a peer we've merely *heard from* skip a fresh ARP round trip. Any
  * pending dmarp_resolve() call on any interface is then woken to
  * re-check the cache.
+ *
+ * After that, if the frame is itself a request whose target address
+ * matches `iface`'s own currently configured IPv4 address, a reply is
+ * sent back to the requester right away (unicast, via dmnetif_send() on
+ * the same `iface`) - this is the only place in dmod that answers ARP on
+ * our own behalf, see this header's top comment. Best-effort: silently
+ * gives up if `iface` has no IPv4 address configured, its MAC address
+ * can't be read, or the reply can't be sent.
  *
  * @param iface     Interface the frame was received on
  * @param frame     Received frame bytes (full Ethernet frame, as passed to

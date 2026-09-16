@@ -297,22 +297,34 @@ static void build_request_frame(uint8_t* frame, const dmnetif_mac_addr_t* local_
 }
 
 /**
+ * @brief Parsed-out fields of a well-formed ARP request or reply frame,
+ *        as produced by parse_arp_frame()
+ */
+typedef struct
+{
+    uint16_t            opcode;      /**< DMARP_OP_REQUEST or DMARP_OP_REPLY */
+    dmroute_addr_t      sender_ip;   /**< Sender's protocol (IPv4) address */
+    dmnetif_mac_addr_t  sender_mac;  /**< Sender's MAC address */
+    dmroute_addr_t      target_ip;   /**< Target protocol (IPv4) address - the address being asked about in a request, or the address the reply is addressed to */
+} arp_frame_info_t;
+
+/**
  * @brief Check whether a received frame is a well-formed ARP request or
- *        reply and, if so, extract the sender's protocol+hardware address
+ *        reply and, if so, extract its sender and target addresses
  *
- * Deliberately opcode-agnostic and doesn't filter by sender/target address -
- * dmarp_note_frame() wants to learn from *any* ARP traffic it sees, not
- * just replies to a request we ourselves sent. See dmarp_note_frame()'s
- * doc comment for why a request is just as useful a source as a reply.
+ * Deliberately opcode-agnostic and doesn't filter by sender/target address
+ * itself - dmarp_note_frame() wants to learn from *any* ARP traffic it
+ * sees, not just replies to a request we ourselves sent, and also needs
+ * the target address to decide whether a request is asking about one of
+ * our own addresses. See dmarp_note_frame()'s doc comment.
  *
  * @param frame     Received frame bytes
  * @param length    Number of valid bytes in `frame`
- * @param out_ip    Output buffer for the sender's protocol (IPv4) address
- * @param out_mac   Output buffer for the sender's MAC address
+ * @param out       Output buffer for the parsed fields
  *
  * @return true if `frame` is a well-formed ARP request or reply
  */
-static bool parse_sender_from_frame(const uint8_t* frame, size_t length, dmroute_addr_t* out_ip, dmnetif_mac_addr_t* out_mac)
+static bool parse_arp_frame(const uint8_t* frame, size_t length, arp_frame_info_t* out)
 {
     if (length < DMARP_FRAME_LEN)
         return false;
@@ -327,14 +339,80 @@ static bool parse_sender_from_frame(const uint8_t* frame, size_t length, dmroute
     if (arp[4] != DMNETIF_MAC_ADDR_LEN || arp[5] != DMROUTE_IPV4_ADDR_LEN)
         return false;
 
-    uint16_t opcode = read_u16_be(&arp[6]);
-    if (opcode != DMARP_OP_REQUEST && opcode != DMARP_OP_REPLY)
+    out->opcode = read_u16_be(&arp[6]);
+    if (out->opcode != DMARP_OP_REQUEST && out->opcode != DMARP_OP_REPLY)
         return false;
 
-    out_ip->family = dmroute_family_v4;
-    memcpy(out_ip->addr.v4, &arp[14], DMROUTE_IPV4_ADDR_LEN);
-    memcpy(out_mac->addr, &arp[8], DMNETIF_MAC_ADDR_LEN);
+    out->sender_ip.family = dmroute_family_v4;
+    memcpy(out->sender_ip.addr.v4, &arp[14], DMROUTE_IPV4_ADDR_LEN);
+    memcpy(out->sender_mac.addr, &arp[8], DMNETIF_MAC_ADDR_LEN);
+
+    out->target_ip.family = dmroute_family_v4;
+    memcpy(out->target_ip.addr.v4, &arp[24], DMROUTE_IPV4_ADDR_LEN);
     return true;
+}
+
+/**
+ * @brief Build an ARP reply frame answering a request for `local_ip`,
+ *        addressed back to the requester - see this file's top comment
+ *        for the exact byte layout
+ *
+ * @param frame       Output buffer, must be at least DMARP_FRAME_LEN bytes
+ * @param local_mac   The answering interface's own MAC address
+ * @param local_ip    The address being claimed (must be dmroute_family_v4)
+ * @param request_ip  Sender protocol address of the request being answered
+ * @param request_mac Sender hardware address of the request being answered
+ */
+static void build_reply_frame(uint8_t* frame, const dmnetif_mac_addr_t* local_mac, const dmroute_addr_t* local_ip,
+    const dmroute_addr_t* request_ip, const dmnetif_mac_addr_t* request_mac)
+{
+    memset(frame, 0, DMARP_FRAME_LEN);
+
+    memcpy(&frame[0], request_mac->addr, DMNETIF_MAC_ADDR_LEN); /* unicast back to the requester */
+    memcpy(&frame[6], local_mac->addr, DMNETIF_MAC_ADDR_LEN);
+    write_u16_be(&frame[12], DMARP_ETHERTYPE_ARP);
+
+    uint8_t* arp = &frame[DMARP_ETH_HEADER_LEN];
+    write_u16_be(&arp[0], DMARP_HTYPE_ETHERNET);
+    write_u16_be(&arp[2], DMARP_PTYPE_IPV4);
+    arp[4] = DMNETIF_MAC_ADDR_LEN;
+    arp[5] = DMROUTE_IPV4_ADDR_LEN;
+    write_u16_be(&arp[6], DMARP_OP_REPLY);
+    memcpy(&arp[8], local_mac->addr, DMNETIF_MAC_ADDR_LEN);
+    memcpy(&arp[14], local_ip->addr.v4, DMROUTE_IPV4_ADDR_LEN);
+    memcpy(&arp[18], request_mac->addr, DMNETIF_MAC_ADDR_LEN);
+    memcpy(&arp[24], request_ip->addr.v4, DMROUTE_IPV4_ADDR_LEN);
+}
+
+/**
+ * @brief If `info` is a request asking about one of `iface`'s own
+ *        addresses, send an ARP reply claiming it
+ *
+ * Best-effort: silently gives up if `iface` has no IPv4 address
+ * configured, if the target doesn't match it, or if the MAC address
+ * can't be read or the reply can't be sent (e.g. interface down) - none
+ * of these are this function's caller's problem, same as dmarp_note_frame()
+ * ignoring malformed frames.
+ */
+static void answer_if_for_us(dmnetif_iface_t iface, const arp_frame_info_t* info)
+{
+    if (info->opcode != DMARP_OP_REQUEST)
+        return;
+
+    dmroute_addr_t local_ip = { 0 };
+    if (dmnetif_get_ip_address(iface, &local_ip) != 0 || local_ip.family != dmroute_family_v4)
+        return;
+
+    if (!ipv4_bytes_equal(info->target_ip.addr.v4, local_ip.addr.v4))
+        return;
+
+    dmnetif_mac_addr_t local_mac = { 0 };
+    if (dmnetif_get_mac_address(iface, &local_mac) != 0)
+        return;
+
+    uint8_t reply[DMARP_FRAME_LEN];
+    build_reply_frame(reply, &local_mac, &local_ip, &info->sender_ip, &info->sender_mac);
+    dmnetif_send(iface, reply, sizeof(reply));
 }
 
 /* ---- DMOD lifecycle ---- */
@@ -464,13 +542,14 @@ dmod_dmarp_api_declaration(1.0, void, _note_frame, ( dmnetif_iface_t iface, cons
     if (iface == NULL || frame == NULL)
         return;
 
-    dmroute_addr_t sender_ip;
-    dmnetif_mac_addr_t sender_mac;
-    if (!parse_sender_from_frame(frame, frame_len, &sender_ip, &sender_mac))
+    arp_frame_info_t info;
+    if (!parse_arp_frame(frame, frame_len, &info))
         return;
 
-    cache_insert(iface, &sender_ip, &sender_mac);
+    cache_insert(iface, &info.sender_ip, &info.sender_mac);
     dmosi_semaphore_post(g_reply_signal, 1);
+
+    answer_if_for_us(iface, &info);
 }
 
 /* ---- Cache ---- */
