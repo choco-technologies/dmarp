@@ -147,6 +147,30 @@ reply-wait/timeout path itself is only exercised indirectly (through
 `dmarp_note_frame()`'s cache side effect); real end-to-end coverage needs a
 real network driver behind `dmnetif_register()`.
 
+### On-target: `tests/arp_probe.py`
+
+That end-to-end gap is what `tests/arp_probe.py` closes. It runs on the
+Linux box a real device is cabled to and drives the exchange from the
+outside - it sends the ARP request itself over a raw socket, so it needs no
+address in the device's subnet and changes nothing on the host:
+
+```bash
+sudo ./tests/arp_probe.py --iface enp114s0 \
+                         --target-ip 192.168.50.10 \
+                         --expect-mac 02:00:00:00:00:01
+```
+
+Besides checking that a correctly-addressed reply comes back, it asks for an
+address the device does *not* own and requires silence - the check that
+catches a responder answering for everything, which no positive-only test can
+see. It also has a `--self-test` mode that validates its own frame handling
+with no device, interface or privileges, so CI can run it.
+
+The device needs an IPv4 address on the interface *and* a running RX pump
+(`networkd`) before it will answer anything. See
+[docs/on-target-testing.md](docs/on-target-testing.md) for the full setup,
+every check the probe makes, and what each failure points at.
+
 ## Usage
 
 ### Resolving a destination before sending a frame
@@ -324,14 +348,16 @@ dmarp/
 ├── docs/              # Documentation (markdown format)
 │   ├── README.md
 │   ├── dmarp.md
-│   └── api-reference.md
+│   ├── api-reference.md
+│   └── on-target-testing.md
 ├── include/           # Public headers
 │   └── dmarp.h
 ├── src/
 │   └── dmarp.c
 ├── tests/
 │   ├── CMakeLists.txt
-│   └── dmarp_test.c
+│   ├── dmarp_test.c
+│   └── arp_probe.py   # Host-side on-target responder probe
 ├── CMakeLists.txt
 ├── Makefile
 ├── manifest.dmm

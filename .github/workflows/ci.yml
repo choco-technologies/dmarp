@@ -40,3 +40,11 @@ jobs:
           export DMOD_DMF_DIR=$(pwd)/build/dmf
           dmf-get install -d ${DMOD_DMF_DIR}/test_dmarp-local.dmd -y
           dmod_loader build/dmf/test_dmarp.dmf
+
+      # tests/arp_probe.py's live mode needs a real device on a real link, so
+      # only its self-test runs here: that validates the probe's own ARP frame
+      # building and reply validation, which is what would otherwise fail
+      # silently on someone's desk rather than in CI. No device, interface or
+      # privileges needed.
+      - name: Self-test the on-target ARP probe
+        run: python3 tests/arp_probe.py --self-test
