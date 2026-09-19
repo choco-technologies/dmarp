@@ -438,7 +438,7 @@ int dmod_init(const Dmod_Config_t *Config)
      * macro resolves to this module's own name here and to the running
      * process's allocator in an application module, so it stays correct if
      * this code is ever reused in one. */
-    g_cache = dmlist_create(DMOD_CURRENT_ALLOCATOR);
+    g_cache = dmlist_create();
     g_mutex = dmosi_mutex_create(false);
     g_reply_signal = dmosi_semaphore_create(0, UINT32_MAX);
     if (g_cache == NULL || g_mutex == NULL || g_reply_signal == NULL)
