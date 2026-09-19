@@ -429,7 +429,16 @@ int dmod_init(const Dmod_Config_t *Config)
 {
     (void)Config;
 
-    g_cache = dmlist_create(Dmod_GetCurrentAllocatorName());
+    /* DMOD_CURRENT_ALLOCATOR, not Dmod_GetCurrentAllocatorName(): dmod_init() runs on
+     * the thread of whoever enabled this module, so the "current" allocator is
+     * that process's - and allocation tracking bulk-frees a process's memory
+     * when it exits. State that belongs to the module has to be tagged to the
+     * module, or it dies with the first process that happened to pull it in,
+     * leaving this pointer aimed at whatever gets allocated there next. The
+     * macro resolves to this module's own name here and to the running
+     * process's allocator in an application module, so it stays correct if
+     * this code is ever reused in one. */
+    g_cache = dmlist_create(DMOD_CURRENT_ALLOCATOR);
     g_mutex = dmosi_mutex_create(false);
     g_reply_signal = dmosi_semaphore_create(0, UINT32_MAX);
     if (g_cache == NULL || g_mutex == NULL || g_reply_signal == NULL)
